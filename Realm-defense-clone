@@ -1,0 +1,252 @@
+// Basic setup for Realm Defense Clone game
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+const GAME_WIDTH = canvas.width;
+const GAME_HEIGHT = canvas.height;
+
+// Game state
+let enemies = [];
+let towers = [];
+let projectiles = [];
+let money = 100;
+let health = 10;
+let wave = 1;
+let gameOver = false;
+
+// Enemy path points
+const pathPoints = [
+  { x: 0, y: 300 },
+  { x: 200, y: 300 },
+  { x: 200, y: 100 },
+  { x: 600, y: 100 },
+  { x: 600, y: 500 },
+  { x: 800, y: 500 }
+];
+
+// Enemy class
+class Enemy {
+  constructor() {
+    this.speed = 1 + wave * 0.1;
+    this.health = 10 + wave * 5;
+    this.maxHealth = this.health;
+    this.position = { x: pathPoints[0].x, y: pathPoints[0].y };
+    this.pathIndex = 0;
+    this.radius = 15;
+  }
+
+  update() {
+    if (this.pathIndex < pathPoints.length - 1) {
+      const target = pathPoints[this.pathIndex + 1];
+      const dx = target.x - this.position.x;
+      const dy = target.y - this.position.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < this.speed) {
+        this.position = { x: target.x, y: target.y };
+        this.pathIndex++;
+      } else {
+        this.position.x += (dx / dist) * this.speed;
+        this.position.y += (dy / dist) * this.speed;
+      }
+    } else {
+      // Enemy reached the end
+      health--;
+      this.health = 0; // Mark for removal
+    }
+  }
+
+  draw() {
+    ctx.fillStyle = 'red';
+    ctx.beginPath();
+    ctx.arc(this.position.x, this.position.y, this.radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Health bar
+    ctx.fillStyle = 'black';
+    ctx.fillRect(this.position.x - this.radius, this.position.y - this.radius - 10, this.radius * 2, 5);
+    ctx.fillStyle = 'limegreen';
+    ctx.fillRect(this.position.x - this.radius, this.position.y - this.radius - 10, (this.health / this.maxHealth) * this.radius * 2, 5);
+  }
+}
+
+// Tower class
+class Tower {
+  constructor(x, y) {
+    this.position = { x, y };
+    this.radius = 20;
+    this.range = 100;
+    this.fireRate = 60; // frames per shot
+    this.fireCooldown = 0;
+  }
+
+  update() {
+    if (this.fireCooldown > 0) {
+      this.fireCooldown--;
+    } else {
+      // Find nearest enemy in range
+      let target = null;
+      let minDist = this.range;
+      for (const enemy of enemies) {
+        const dx = enemy.position.x - this.position.x;
+        const dy = enemy.position.y - this.position.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < minDist) {
+          minDist = dist;
+          target = enemy;
+        }
+      }
+      if (target) {
+        this.shoot(target);
+        this.fireCooldown = this.fireRate;
+      }
+    }
+  }
+
+  shoot(target) {
+    const projectile = new Projectile(this.position.x, this.position.y, target);
+    projectiles.push(projectile);
+  }
+
+  draw() {
+    ctx.fillStyle = 'blue';
+    ctx.beginPath();
+    ctx.arc(this.position.x, this.position.y, this.radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// Projectile class
+class Projectile {
+  constructor(x, y, target) {
+    this.position = { x, y };
+    this.target = target;
+    this.speed = 5;
+    this.radius = 5;
+    this.damage = 5;
+    this.active = true;
+  }
+
+  update() {
+    if (!this.target || this.target.health <= 0) {
+      this.active = false;
+      return;
+    }
+    const dx = this.target.position.x - this.position.x;
+    const dy = this.target.position.y - this.position.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < this.speed) {
+      // Hit the target
+      this.target.health -= this.damage;
+      this.active = false;
+      if (this.target.health <= 0) {
+        money += 10;
+      }
+    } else {
+      this.position.x += (dx / dist) * this.speed;
+      this.position.y += (dy / dist) * this.speed;
+    }
+  }
+
+  draw() {
+    ctx.fillStyle = 'yellow';
+    ctx.beginPath();
+    ctx.arc(this.position.x, this.position.y, this.radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// Game loop
+function gameLoop() {
+  if (gameOver) {
+    drawGameOver();
+    return;
+  }
+
+  ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+  drawPath();
+
+  // Update and draw enemies
+  enemies.forEach(enemy => enemy.update());
+  enemies = enemies.filter(enemy => enemy.health > 0);
+  enemies.forEach(enemy => enemy.draw());
+
+  // Update and draw towers
+  towers.forEach(tower => tower.update());
+  towers.forEach(tower => tower.draw());
+
+  // Update and draw projectiles
+  projectiles.forEach(projectile => projectile.update());
+  projectiles = projectiles.filter(projectile => projectile.active);
+  projectiles.forEach(projectile => projectile.draw());
+
+  drawUI();
+
+  if (enemies.length === 0) {
+    spawnWave();
+  }
+
+  if (health <= 0) {
+    gameOver = true;
+  }
+
+  requestAnimationFrame(gameLoop);
+}
+
+// Draw enemy path
+function drawPath() {
+  ctx.strokeStyle = 'gray';
+  ctx.lineWidth = 20;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(pathPoints[0].x, pathPoints[0].y);
+  for (let i = 1; i < pathPoints.length; i++) {
+    ctx.lineTo(pathPoints[i].x, pathPoints[i].y);
+  }
+  ctx.stroke();
+}
+
+// Draw UI
+function drawUI() {
+  ctx.fillStyle = 'white';
+  ctx.font = '20px Roboto, sans-serif';
+  ctx.fillText(`Health: ${health}`, 10, 30);
+  ctx.fillText(`Money: $${money}`, 10, 60);
+  ctx.fillText(`Wave: ${wave}`, 10, 90);
+}
+
+// Spawn a wave of enemies
+function spawnWave() {
+  for (let i = 0; i < wave + 2; i++) {
+    setTimeout(() => {
+      enemies.push(new Enemy());
+    }, i * 1000);
+  }
+  wave++;
+}
+
+// Handle canvas click to place towers
+canvas.addEventListener('click', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+
+  if (money >= 50) {
+    towers.push(new Tower(x, y));
+    money -= 50;
+  }
+});
+
+// Draw game over screen
+function drawGameOver() {
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+  ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+  ctx.fillStyle = 'red';
+  ctx.font = '48px Roboto, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Game Over', GAME_WIDTH / 2, GAME_HEIGHT / 2);
+}
+
+spawnWave();
+requestAnimationFrame(gameLoop);
